@@ -2904,12 +2904,6 @@ class PoolDatasetService(CRUDService):
 
             data['xattr'] = 'SA'
 
-        if (await self.get_instance(data['name'].rsplit('/', 1)[0]))['locked']:
-            verrors.add(
-                'pool_dataset_create.name',
-                f'{data["name"].rsplit("/", 1)[0]} must be unlocked to create {data["name"]}.'
-            )
-
         encryption_dict = {}
         inherit_encryption_properties = data.pop('inherit_encryption')
         if not inherit_encryption_properties:
@@ -3139,7 +3133,8 @@ class PoolDatasetService(CRUDService):
 
         parent = await self.middleware.call(
             'zfs.dataset.query',
-            [('id', '=', data['name'].rsplit('/')[0])]
+            [('id', '=', data['name'].rsplit('/')[0])],
+            {'extra': {'recursive': False}}
         )
 
         if not parent:
@@ -3149,6 +3144,13 @@ class PoolDatasetService(CRUDService):
             )
         else:
             parent = parent[0]
+
+        if mode == 'CREATE':
+            if parent['encrypted'] and not parent['key_loaded']:
+                verrors.add(
+                    'pool_dataset_create.name',
+                    f'{data["name"].rsplit("/", 1)[0]} must be unlocked to create {data["name"]}.'
+                )
 
         if data['type'] == 'FILESYSTEM':
             if data.get("aclmode") and osc.IS_LINUX:
@@ -3186,7 +3188,8 @@ class PoolDatasetService(CRUDService):
                 if mode == 'UPDATE':
                     avail_mem += int((await self.middleware.call(
                         'zfs.dataset.query',
-                        [['id', '=', data['name']]]
+                        [['id', '=', data['name']]],
+                        {'extra': {'recursive': False}}
                     ))[0]['properties']['used']['rawvalue'])
 
                 if (
